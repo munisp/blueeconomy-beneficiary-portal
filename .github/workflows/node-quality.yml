@@ -1,0 +1,40 @@
+name: Node Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: node-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node.js
+        uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # v4.0.3
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Type-check and build
+        run: npm run build
+      - name: Verify no production source maps ship
+        run: |
+          if find dist -name '*.map' | grep -q .; then
+            echo "production source maps must not be emitted" >&2
+            exit 1
+          fi
+      - name: Run tests
+        run: npm test
+      - name: Check production dependency advisories
+        run: npm audit --omit=dev --audit-level=high

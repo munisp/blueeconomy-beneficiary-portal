@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #f4f6f7;
+  --color-brand-100: #e4e9ec;
+  --color-brand-200: #c9d3d9;
+  --color-brand-300: #a3b4be;
+  --color-brand-400: #76909e;
+  --color-brand-500: #567383;
+  --color-brand-600: #445e6d;
+  --color-brand-700: #374c59;
+  --color-brand-800: #2c3e48;
+  --color-brand-900: #24333c;
+}
+
+body {
+  background-color: #f7f8f8;
+  color: #1f2933;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.portal-shell {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5d6d77;
+  font-weight: 600;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #dfe5e8;
+  border-radius: 0.5rem;
+  padding: 1.25rem 1.5rem;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 0.375rem;
+  border: 1px solid #2c3e48;
+  background: #2c3e48;
+  color: #ffffff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+.button:hover:not(:disabled) {
+  background: #24333c;
+}
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.button--outline {
+  background: #ffffff;
+  color: #2c3e48;
+}
+.button--outline:hover:not(:disabled) {
+  background: #f0f3f4;
+}
+.button--quiet {
+  background: transparent;
+  border-color: transparent;
+  color: #445e6d;
+}
+.button--quiet:hover:not(:disabled) {
+  background: #e4e9ec;
+}
+.button--danger {
+  background: #8a3434;
+  border-color: #8a3434;
+}
+.button--danger:hover:not(:disabled) {
+  background: #742b2b;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.15rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge--neutral { background: #eef1f2; color: #4a5a64; border-color: #d4dcdf; }
+.badge--info { background: #e8eef3; color: #33526b; border-color: #c6d5e0; }
+.badge--progress { background: #e9eef1; color: #374c59; border-color: #b9c8d0; }
+.badge--success { background: #e6efe8; color: #2f5d3a; border-color: #c4d8c9; }
+.badge--danger { background: #f3e6e6; color: #7d3030; border-color: #dfc4c4; }
+.badge--warning { background: #f5efe3; color: #7a5c26; border-color: #e3d5b8; }
+
+.field-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #37474f;
+  margin-bottom: 0.3rem;
+}
+.field-input, .field-select, .field-textarea {
+  width: 100%;
+  border: 1px solid #c3ccd1;
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  background: #ffffff;
+  color: #1f2933;
+}
+.field-input:focus, .field-select:focus, .field-textarea:focus {
+  outline: 2px solid #76909e;
+  outline-offset: 1px;
+  border-color: #76909e;
+}
+.field-error {
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: #8a3434;
+}
+
+.progress-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #e4e9ec;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: #567383;
+  transition: width 150ms linear;
+}
+
+.timeline-step {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  gap: 0.75rem;
+  position: relative;
+  padding-bottom: 1.25rem;
+}
+.timeline-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 0.6875rem;
+  top: 1.4rem;
+  bottom: 0;
+  width: 2px;
+  background: #d4dcdf;
+}
+.timeline-marker {
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  border: 2px solid #b9c8d0;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: #4a5a64;
+  z-index: 1;
+}
+.timeline-marker--done { background: #567383; border-color: #567383; color: #ffffff; }
+.timeline-marker--current { border-color: #374c59; background: #e9eef1; color: #24333c; font-weight: 700; }
+.timeline-marker--rejected { background: #8a3434; border-color: #8a3434; color: #ffffff; }
+.timeline-marker--warning { background: #b08a3e; border-color: #b08a3e; color: #ffffff; }
