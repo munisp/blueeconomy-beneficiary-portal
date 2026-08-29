@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { User, UserManager } from "oidc-client-ts";
 import { completeAuthenticationCallback, createUserManager, usableAccessToken } from "./auth";
 import { loadRuntimeConfiguration, type PortalRuntimeConfiguration } from "./runtime-config";
+import { initTelemetry } from "./telemetry";
 import { CvffApiClient } from "./api/client";
 import { parseRoute, routeHref, type Route } from "./router";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -168,6 +169,15 @@ export default function App() {
 
 async function bootstrap(): Promise<Extract<ApplicationState, { kind: "ready" }>> {
   const configuration = await loadRuntimeConfiguration(RUNTIME_CONFIGURATION_URL);
+  // RUM (phase-7 OTel): fire-and-forget — async, non-blocking, never in the
+  // critical render path. No telemetry.otlp_endpoint in the runtime config =
+  // telemetry disabled; init never rejects (sanctioned fail-open).
+  void initTelemetry({
+    endpoint: configuration.telemetry?.otlp_endpoint,
+    sampleRatio: configuration.telemetry?.sample_ratio,
+    serviceName: "blueeconomy-beneficiary-portal",
+    propagateTo: [configuration.cvff_api.base_url],
+  });
   const manager = createUserManager(configuration.oidc);
   const callbackUser = await completeAuthenticationCallback(manager);
   const user = callbackUser ?? (await manager.getUser());
