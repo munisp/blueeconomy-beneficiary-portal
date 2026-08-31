@@ -41,6 +41,27 @@ export function DashboardPage({ session, navigate }: { session: SessionContext; 
 
   return (
     <div className="space-y-4">
+      <section className="card">
+        <p className="eyebrow">Seafarer welfare · MLC 2006 (confidential)</p>
+        <h2 className="mt-1 text-lg font-semibold text-slate-800">Complaints and welfare referrals</h2>
+        <p className="mt-1 max-w-2xl text-sm text-slate-600">
+          Lodge an MLC complaint (on-board Reg 5.1.5 or flag-state Reg 5.2.2), track its governed status, and view
+          welfare-provider referrals recorded with your consent. Identity is withheld from respondents unless a legally
+          required disclosure is approved.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className="button button--outline" onClick={() => navigate({ name: "welfare-complaint-new" })}>
+            Lodge a complaint
+          </button>
+          <button className="button button--outline" onClick={() => navigate({ name: "welfare-complaints" })}>
+            Track my complaints
+          </button>
+          <button className="button button--outline" onClick={() => navigate({ name: "welfare-referrals" })}>
+            My welfare referrals
+          </button>
+        </div>
+      </section>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="eyebrow">Dashboard</p>
