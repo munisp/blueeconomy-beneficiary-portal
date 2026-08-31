@@ -1,0 +1,19 @@
+{
+  "name": "CVFF Beneficiary Portal",
+  "short_name": "CVFF",
+  "description": "Cabotage Vessel Financing Fund beneficiary portal — applications, documents, and award tracking.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f8f8",
+  "theme_color": "#24333c",
+  "orientation": "any",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["government", "finance"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "id": "gov.blueeconomy.cvff-beneficiary-portal"
+}
