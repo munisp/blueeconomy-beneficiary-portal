@@ -64,6 +64,26 @@ All calls are derived from `cvff_api.base_url` and carry the Keycloak access tok
 
 The state machine rendered by the portal is exactly the one enforced by `blueeconomy-financial-controls` (`SUBMITTED → UNDERWRITING_PRIMARY → UNDERWRITING_SECONDARY → UNDERWRITING_TERTIARY → NIMASA_APPROVAL → BANK_CONFIRMATION → DISBURSEMENT_PENDING → DISBURSED → AUDITED`, plus fail-closed `REJECTED` and `RECONCILIATION_REQUIRED`).
 
+## Seafarer welfare surface (MLC 2006, phase 8)
+
+The portal also hosts the confidential seafarer welfare flows backed by the welfare module of `blueeconomy-credential-verification` (`src/welfare/routes.ts`): MLC 2006 complaint intake (on-board Reg 5.1.5 / flag-state Reg 5.2.2) with the mandatory right-to-external-redress acknowledgement (Reg 5.1.5(3)), complaint status tracking over the governed maker-checker timeline (with identity-disclosure events flagged), and welfare-provider referral visibility with recorded consent. Client-side validation mirrors the backend intake rules one-to-one; attachments are SHA-256 digest references computed in the browser — file content is never uploaded because the API accepts descriptors only. Complaint and referral references stay out of URLs; the views fetch the authenticated seafarer's own records.
+
+This surface is configured **at build time** and fails closed independently of the CVFF configuration:
+
+| Variable | Required | Meaning |
+| --- | --- | --- |
+| `VITE_WELFARE_API_BASE_URL` | yes (for the welfare surface) | HTTPS base URL of the welfare API behind the approved gateway, e.g. `https://gateway.example/v1/welfare`. Unset or insecure values disable the welfare flows with a hard integration-gate error; loopback HTTP is accepted only for local development. No fallback host is ever used. |
+
+Calls carry the same Keycloak access token as the CVFF API and consume exactly these routes (the caller must hold the `seafarer` role):
+
+| Endpoint | Method | Used by | Notes |
+| --- | --- | --- | --- |
+| `{VITE_WELFARE_API_BASE_URL}/complaints` | POST | Complaint intake | Body `{channel, category, vesselRef, operatorRef?, narrative, attachments[{name, sha256}], rightToRedressNoticeAck: true}`; header `Idempotency-Key: <uuid>` retained across retries. 201 on create, 200 on idempotent replay. |
+| `{VITE_WELFARE_API_BASE_URL}/complaints/mine` | GET | Status tracking | The seafarer's complaints with their governed timelines (`RECEIVED`, `FROM->TO`, `DISCLOSE:<reasonCode>` events). |
+| `{VITE_WELFARE_API_BASE_URL}/referrals/mine` | GET | Referral visibility | The seafarer's referrals with `consentAt`, `status` and linked complaint references. |
+
+The complaint lifecycle rendered is exactly the one enforced by the welfare module: `RECEIVED → ACKED → ONBOARD_PROCESS`, with governed branches to `ESCALATED_FLAGSTATE` and `REFERRED`, and `RESOLVED → CLOSED` terminal.
+
 ## Security posture
 
 - Strict CSP in both `index.html` (`<meta>`) and the nginx policy (`default-src 'self'`, no `object-src`, no inline scripts/styles).

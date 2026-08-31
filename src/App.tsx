@@ -4,26 +4,40 @@ import { completeAuthenticationCallback, createUserManager, usableAccessToken } 
 import { loadRuntimeConfiguration, type PortalRuntimeConfiguration } from "./runtime-config";
 import { initTelemetry } from "./telemetry";
 import { CvffApiClient } from "./api/client";
+import { welfareApiBaseUrlFromEnv } from "./api/welfare-config";
 import { parseRoute, routeHref, type Route } from "./router";
 import { DashboardPage } from "./pages/DashboardPage";
 import { NewApplicationPage } from "./pages/NewApplicationPage";
 import { ApplicationDetailPage } from "./pages/ApplicationDetailPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
+import { NewComplaintPage } from "./pages/welfare/NewComplaintPage";
+import { ComplaintStatusPage } from "./pages/welfare/ComplaintStatusPage";
+import { ReferralsPage } from "./pages/welfare/ReferralsPage";
 
 const RUNTIME_CONFIGURATION_URL = "/platform-config.json";
+
+/**
+ * Build-time welfare API configuration: configured with the approved base
+ * URL, or unavailable with the fail-closed reason. Never substituted.
+ */
+export type WelfareSurfaceConfig = { kind: "configured"; baseUrl: string } | { kind: "unavailable"; reason: string };
 
 export interface SessionContext {
   configuration: PortalRuntimeConfiguration;
   user: User;
   /** Returns a client with a non-expired token, or null when re-authentication is required. */
   getClient: () => Promise<CvffApiClient | null>;
+  /** Welfare (MLC 2006) surface configuration; pages render the fail-closed gate when unavailable. */
+  welfare: WelfareSurfaceConfig;
+  /** Same as getClient but bound to the welfare API base URL and the same Keycloak access token. */
+  getWelfareClient: () => Promise<CvffApiClient | null>;
   signOut: () => Promise<void>;
 }
 
 type ApplicationState =
   | { kind: "loading" }
   | { kind: "configuration-error"; error: string }
-  | { kind: "ready"; configuration: PortalRuntimeConfiguration; manager: UserManager; user: User | null };
+  | { kind: "ready"; configuration: PortalRuntimeConfiguration; welfare: WelfareSurfaceConfig; manager: UserManager; user: User | null };
 
 export default function App() {
   const [state, setState] = useState<ApplicationState>({ kind: "loading" });
@@ -72,6 +86,21 @@ export default function App() {
       setState({ ...state, user: usable.user });
     }
     return new CvffApiClient({ baseUrl: state.configuration.cvff_api.base_url, token: usable.token });
+  }, [state]);
+
+  const getWelfareClient = useCallback(async (): Promise<CvffApiClient | null> => {
+    if (state.kind !== "ready" || state.welfare.kind !== "configured") {
+      return null;
+    }
+    const usable = await usableAccessToken(state.manager, state.user);
+    if (usable === null) {
+      setState({ ...state, user: null });
+      return null;
+    }
+    if (usable.user !== state.user) {
+      setState({ ...state, user: usable.user });
+    }
+    return new CvffApiClient({ baseUrl: state.welfare.baseUrl, token: usable.token });
   }, [state]);
 
   async function startSignIn(): Promise<void> {
@@ -157,6 +186,8 @@ export default function App() {
             configuration: state.configuration,
             user: state.user,
             getClient,
+            welfare: state.welfare,
+            getWelfareClient,
             signOut: startSignOut,
           }}
           route={route}
@@ -169,9 +200,20 @@ export default function App() {
 
 async function bootstrap(): Promise<Extract<ApplicationState, { kind: "ready" }>> {
   const configuration = await loadRuntimeConfiguration(RUNTIME_CONFIGURATION_URL);
+  // The welfare surface fails closed independently: an absent or insecure
+  // build-time welfare base URL disables only the welfare flows, never the
+  // CVFF ones, and is never replaced by a fallback host.
+  let welfare: WelfareSurfaceConfig;
+  try {
+    welfare = { kind: "configured", baseUrl: welfareApiBaseUrlFromEnv({ VITE_WELFARE_API_BASE_URL: import.meta.env.VITE_WELFARE_API_BASE_URL }) };
+  } catch (error) {
+    welfare = { kind: "unavailable", reason: error instanceof Error ? error.message : "invalid welfare API configuration" };
+  }
   // RUM (phase-7 OTel): fire-and-forget — async, non-blocking, never in the
   // critical render path. No telemetry.otlp_endpoint in the runtime config =
-  // telemetry disabled; init never rejects (sanctioned fail-open).
+  // telemetry disabled; init never rejects (sanctioned fail-open). Trace
+  // context propagation stays scoped to the CVFF API origin: the CONFIDENTIAL
+  // welfare API is deliberately not a propagation target.
   void initTelemetry({
     endpoint: configuration.telemetry?.otlp_endpoint,
     sampleRatio: configuration.telemetry?.sample_ratio,
@@ -181,7 +223,7 @@ async function bootstrap(): Promise<Extract<ApplicationState, { kind: "ready" }>
   const manager = createUserManager(configuration.oidc);
   const callbackUser = await completeAuthenticationCallback(manager);
   const user = callbackUser ?? (await manager.getUser());
-  return { kind: "ready", configuration, manager, user };
+  return { kind: "ready", configuration, welfare, manager, user };
 }
 
 function SessionView({ session, route, navigate }: { session: SessionContext; route: Route; navigate: (route: Route) => void }) {
@@ -194,5 +236,11 @@ function SessionView({ session, route, navigate }: { session: SessionContext; ro
       return <ApplicationDetailPage session={session} applicationId={route.applicationId} navigate={navigate} />;
     case "application-documents":
       return <DocumentsPage session={session} applicationId={route.applicationId} navigate={navigate} />;
+    case "welfare-complaints":
+      return <ComplaintStatusPage session={session} navigate={navigate} />;
+    case "welfare-complaint-new":
+      return <NewComplaintPage session={session} navigate={navigate} />;
+    case "welfare-referrals":
+      return <ReferralsPage session={session} navigate={navigate} />;
   }
 }
