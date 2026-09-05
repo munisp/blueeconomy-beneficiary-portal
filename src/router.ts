@@ -7,7 +7,8 @@ export type Route =
   | { name: "dashboard" }
   | { name: "new-application" }
   | { name: "application-detail"; applicationId: string }
-  | { name: "application-documents"; applicationId: string };
+  | { name: "application-documents"; applicationId: string }
+  | { name: "not-found"; path: string };
 
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#/, "");
@@ -24,7 +25,7 @@ export function parseRoute(hash: string): Route {
   if (segments.length === 3 && segments[0] === "applications" && segments[2] === "documents") {
     return { name: "application-documents", applicationId: decodeURIComponent(segments[1]) };
   }
-  return { name: "dashboard" };
+  return { name: "not-found", path: `/${segments.join("/")}` };
 }
 
 export function routeHref(route: Route): string {
@@ -37,5 +38,7 @@ export function routeHref(route: Route): string {
       return `#/applications/${encodeURIComponent(route.applicationId)}`;
     case "application-documents":
       return `#/applications/${encodeURIComponent(route.applicationId)}/documents`;
+    case "not-found":
+      return "#/";
   }
 }

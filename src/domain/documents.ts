@@ -9,6 +9,20 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   BANK_DETAILS: "Receiving bank account details",
 };
 
+/** Human-readable byte size: "512 B", "1.5 KB", "2.0 MB". Never rounds to "0 KB". */
+export function formatByteSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return "0 B";
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export interface DocumentValidationRules {
   maxBytes: number;
   contentTypes: readonly string[];

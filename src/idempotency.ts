@@ -78,3 +78,39 @@ export function defaultIdempotencyStore(): KeyValueStore | null {
     return null;
   }
 }
+
+const DRAFT_SESSION_KEY = "cvff.draft.new-application";
+
+/**
+ * Stable identifier of the in-progress "new application" draft. It survives
+ * page reloads and remounts so the idempotency key derived from it also
+ * survives, which is what makes a refresh mid-submit safe from duplicates.
+ * Rotated only after a confirmed successful submission (or explicit reset).
+ */
+export function newApplicationDraftId(
+  store: KeyValueStore | null,
+  randomUuid: () => string = () => crypto.randomUUID(),
+): string {
+  try {
+    const existing = store?.getItem(DRAFT_SESSION_KEY) ?? null;
+    if (existing !== null && existing.length > 0) {
+      return existing;
+    }
+    const minted = randomUuid();
+    store?.setItem(DRAFT_SESSION_KEY, minted);
+    return minted;
+  } catch {
+    // Storage unavailable: fall back to a per-mount id (retry guarantee
+    // still holds within this page lifetime).
+    return randomUuid();
+  }
+}
+
+/** Drops the current draft id after a confirmed submission so the next application starts fresh. */
+export function resetNewApplicationDraftId(store: KeyValueStore | null): void {
+  try {
+    store?.removeItem(DRAFT_SESSION_KEY);
+  } catch {
+    // Nothing to clean up.
+  }
+}

@@ -14,3 +14,11 @@ createRoot(container).render(
     <App />
   </StrictMode>,
 );
+
+// Minimal offline shell (cache-first static assets only; API/IdP traffic is
+// never intercepted by the worker).
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js");
+  });
+}

@@ -75,3 +75,38 @@ describe("IdempotencyKeyManager", () => {
     expect(manager.key()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 });
+
+describe("new-application draft id persistence", () => {
+  it("reuses the same draft id across remounts sharing a session store", async () => {
+    const { newApplicationDraftId, resetNewApplicationDraftId } = await import("../src/idempotency");
+    const store = memoryStore();
+    let minted = 0;
+    const first = newApplicationDraftId(store, () => `draft-${++minted}`);
+    // Simulated page remount/refresh: a fresh call with the same session.
+    const second = newApplicationDraftId(store, () => `draft-${++minted}`);
+    expect(first).toBe("draft-1");
+    expect(second).toBe("draft-1");
+    expect(minted).toBe(1);
+    // And the idempotency key therefore survives the remount too.
+    const keyA = new IdempotencyKeyManager(first, store, () => "key-1").key();
+    const keyB = new IdempotencyKeyManager(second, store, () => "key-2").key();
+    expect(keyA).toBe("key-1");
+    expect(keyB).toBe("key-1");
+    void resetNewApplicationDraftId;
+  });
+
+  it("mints a fresh draft id only after resetNewApplicationDraftId (confirmed submission)", async () => {
+    const { newApplicationDraftId, resetNewApplicationDraftId } = await import("../src/idempotency");
+    const store = memoryStore();
+    let minted = 0;
+    expect(newApplicationDraftId(store, () => `draft-${++minted}`)).toBe("draft-1");
+    resetNewApplicationDraftId(store);
+    expect(newApplicationDraftId(store, () => `draft-${++minted}`)).toBe("draft-2");
+  });
+
+  it("falls back to a per-call id when storage is unavailable", async () => {
+    const { newApplicationDraftId } = await import("../src/idempotency");
+    let minted = 0;
+    expect(newApplicationDraftId(null, () => `mem-${++minted}`)).toBe("mem-1");
+  });
+});
