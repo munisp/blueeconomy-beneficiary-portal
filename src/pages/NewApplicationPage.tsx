@@ -18,7 +18,7 @@ import {
   type DraftField,
 } from "../domain/wizard";
 import { formatKoboAsNgn } from "../domain/money";
-import { IdempotencyKeyManager, defaultIdempotencyStore } from "../idempotency";
+import { IdempotencyKeyManager, defaultIdempotencyStore, newApplicationDraftId, resetNewApplicationDraftId } from "../idempotency";
 
 const STEPS = ["Vessel details", "Funding and business", "Review and submit"] as const;
 
@@ -31,6 +31,7 @@ const STEP_FIELDS: DraftField[][] = [
 type SubmitState =
   | { kind: "idle" }
   | { kind: "submitting" }
+  | { kind: "submitted"; applicationId: string }
   | { kind: "failed"; formError: string; fieldErrors: DraftErrors };
 
 export function NewApplicationPage({ session, navigate }: { session: SessionContext; navigate: (route: Route) => void }) {
@@ -39,11 +40,14 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
   const [touched, setTouched] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>({ kind: "idle" });
 
-  // One draft per mount; the idempotency key survives retries and reloads
-  // of this page and is rotated only after a confirmed 2xx submission.
+  // One draft per browser session: the draft id (and therefore the
+  // idempotency key) is persisted in sessionStorage, so refreshing the page
+  // mid-submit reuses the same key and cannot create a duplicate. The key is
+  // rotated only after a confirmed 2xx submission.
+  const idempotencyStore = useMemo(() => defaultIdempotencyStore(), []);
   const idempotency = useMemo(
-    () => new IdempotencyKeyManager(crypto.randomUUID(), defaultIdempotencyStore()),
-    [],
+    () => new IdempotencyKeyManager(newApplicationDraftId(idempotencyStore), idempotencyStore),
+    [idempotencyStore],
   );
 
   const errors = validateDraft(draft);
@@ -88,7 +92,8 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
       // Same key on every retry of this draft: the server deduplicates on it.
       const created = await createApplication(client, draftToPayload(draft), idempotency.key());
       idempotency.rotate();
-      navigate({ name: "application-detail", applicationId: created.application_id });
+      resetNewApplicationDraftId(idempotencyStore);
+      setSubmitState({ kind: "submitted", applicationId: created.application_id });
     } catch (error) {
       if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
         const mapped = mapServerErrors(error.problem);
@@ -118,6 +123,30 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
   }
 
   const amountKobo = parseAmountKobo(draft.amountNairaText);
+
+  if (submitState.kind === "submitted") {
+    return (
+      <section className="card border-l-4 border-l-green-700" role="status">
+        <p className="eyebrow">Application submitted</p>
+        <h2 className="mt-1 text-lg font-semibold text-slate-800">Your CVFF application was received</h2>
+        <p className="mt-2 text-sm text-slate-700">
+          Reference: <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{submitState.applicationId}</code>
+        </p>
+        <p className="mt-2 max-w-xl text-sm text-slate-600">
+          The CVFF service has recorded this application exactly once (retries reuse the same idempotency key). What
+          happens next: you will be asked to upload the supporting documents — vessel registration certificate,
+          cabotage license and receiving bank account details — after which NIMASA reviews the application and the
+          status appears on your dashboard.
+        </p>
+        <button
+          className="button mt-4"
+          onClick={() => navigate({ name: "application-detail", applicationId: submitState.applicationId })}
+        >
+          Open application and add documents
+        </button>
+      </section>
+    );
+  }
 
   return (
     <div className="space-y-4">

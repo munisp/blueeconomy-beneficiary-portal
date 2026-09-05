@@ -18,3 +18,18 @@ describe("document file validation", () => {
     expect(validateDocumentFile({ name: "../../etc/passwd", size: 100, type: "application/pdf" }, RULES)).toMatch(/name/);
   });
 });
+
+describe("formatByteSize", () => {
+  it("never rounds small files down to 0 KB", async () => {
+    const { formatByteSize } = await import("../src/domain/documents");
+    expect(formatByteSize(0)).toBe("0 B");
+    expect(formatByteSize(512)).toBe("512 B");
+    expect(formatByteSize(1023)).toBe("1023 B");
+    expect(formatByteSize(1024)).toBe("1.0 KB");
+    expect(formatByteSize(1536)).toBe("1.5 KB");
+    expect(formatByteSize(500_000)).toBe("488.3 KB");
+    expect(formatByteSize(1024 * 1024)).toBe("1.0 MB");
+    expect(formatByteSize(2.5 * 1024 * 1024)).toBe("2.5 MB");
+    expect(formatByteSize(-5)).toBe("0 B");
+  });
+});

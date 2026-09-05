@@ -3,7 +3,7 @@ import type { SessionContext } from "../App";
 import type { Route } from "../router";
 import { listDocuments, type UploadedDocument } from "../api/applications";
 import { ApiError } from "../api/client";
-import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPES, validateDocumentFile, type DocumentType } from "../domain/documents";
+import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPES, formatByteSize, validateDocumentFile, type DocumentType } from "../domain/documents";
 import { IdempotencyKeyManager, defaultIdempotencyStore } from "../idempotency";
 import { EmptyState, ErrorNotice, LoadingState } from "../components/feedback";
 
@@ -200,7 +200,7 @@ export function DocumentsPage({
                 <div>
                   <p className="font-medium text-slate-800">{DOCUMENT_TYPE_LABELS[document.document_type] ?? document.document_type}</p>
                   <p className="text-xs text-slate-500">
-                    {document.file_name} · {(document.size_bytes / 1024).toFixed(0)} KB · {document.content_type}
+                    {document.file_name} · {formatByteSize(document.size_bytes)} · {document.content_type}
                   </p>
                 </div>
                 <span className="text-xs text-slate-500">Confirmed {new Date(document.uploaded_at).toLocaleString("en-NG")}</span>

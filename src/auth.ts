@@ -26,7 +26,46 @@ export async function completeAuthenticationCallback(manager: UserManager): Prom
   if (!hasOidcResponse) {
     return null;
   }
-  return manager.signinRedirectCallback();
+  const user = await manager.signinRedirectCallback();
+  // The authorization response has been consumed; remove ?code&state from the
+  // address bar so a reload or copy of the URL cannot replay a dead callback.
+  cleanCallbackUrl();
+  return user;
+}
+
+/** Replaces the OIDC callback query string with the plain app root URL. */
+export function cleanCallbackUrl(): void {
+  const url = new URL(window.location.href);
+  url.search = "";
+  if (url.hash === "") {
+    url.hash = "/";
+  }
+  window.history.replaceState(null, "", url.toString());
+}
+
+/**
+ * Classifies a bootstrap failure. OIDC "state" errors mean the sign-in
+ * session expired (stale, duplicated or reloaded callback URL) and are
+ * recoverable by signing in again; everything else is a genuine
+ * configuration/integration failure that must stay fail-closed.
+ */
+export type BootstrapErrorKind = "session-expired" | "configuration";
+
+export function classifyBootstrapError(error: unknown): BootstrapErrorKind {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    if (
+      message.includes("no matching state") ||
+      message.includes("state not found") ||
+      message.includes("no state in storage") ||
+      (typeof (error as { name?: unknown }).name === "string" &&
+        (error as { name: string }).name === "ErrorResponse" &&
+        message.includes("state"))
+    ) {
+      return "session-expired";
+    }
+  }
+  return "configuration";
 }
 
 /**
