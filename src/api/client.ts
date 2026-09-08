@@ -35,7 +35,13 @@ export class CvffApiClient {
   constructor(options: ApiClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.token = options.token;
-    this.fetchFn = options.fetchFn ?? fetch;
+    // Bound, not bare `fetch`: calling it later as `this.fetchFn(...)` binds
+    // `this` to the CvffApiClient instance (object.method() call syntax),
+    // and native fetch requires `this` to be Window-like - an unbound
+    // reference throws "TypeError: Failed to execute 'fetch' on 'Window':
+    // Illegal invocation" the moment it's invoked, before any network
+    // activity. Confirmed live via a production repro.
+    this.fetchFn = options.fetchFn ?? fetch.bind(window);
     this.timeoutMs = options.timeoutMs ?? 20_000;
   }
 
