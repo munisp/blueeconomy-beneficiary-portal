@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SessionContext } from "../App";
 import type { Route } from "../router";
 import { createApplication } from "../api/applications";
@@ -19,8 +19,14 @@ import {
 } from "../domain/wizard";
 import { formatKoboAsNgn } from "../domain/money";
 import { IdempotencyKeyManager, defaultIdempotencyStore, newApplicationDraftId, resetNewApplicationDraftId } from "../idempotency";
+import { DraftOutbox, defaultOutboxStore } from "../pwa/draftOutbox";
+import { isOnline, useOnlineStatus } from "../pwa/online";
+import { useTranslator } from "../i18n/react";
+
+const DRAFT_SYNC_TAG = "cvff-draft-sync";
 
 const STEPS = ["Vessel details", "Funding and business", "Review and submit"] as const;
+const STEP_KEYS = ["wizard.steps.vessel", "wizard.steps.funding", "wizard.steps.review"] as const;
 
 const STEP_FIELDS: DraftField[][] = [
   ["vesselName", "imoNumber", "officialNumber", "vesselClass", "cabotageRoute"],
@@ -32,6 +38,7 @@ type SubmitState =
   | { kind: "idle" }
   | { kind: "submitting" }
   | { kind: "submitted"; applicationId: string }
+  | { kind: "queued"; queuedAt: string }
   | { kind: "failed"; formError: string; fieldErrors: DraftErrors };
 
 export function NewApplicationPage({ session, navigate }: { session: SessionContext; navigate: (route: Route) => void }) {
@@ -39,16 +46,72 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
   const [step, setStep] = useState(0);
   const [touched, setTouched] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>({ kind: "idle" });
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const online = useOnlineStatus();
+  const { t } = useTranslator();
 
   // One draft per browser session: the draft id (and therefore the
   // idempotency key) is persisted in sessionStorage, so refreshing the page
   // mid-submit reuses the same key and cannot create a duplicate. The key is
   // rotated only after a confirmed 2xx submission.
   const idempotencyStore = useMemo(() => defaultIdempotencyStore(), []);
-  const idempotency = useMemo(
-    () => new IdempotencyKeyManager(newApplicationDraftId(idempotencyStore), idempotencyStore),
-    [idempotencyStore],
-  );
+  const draftId = useMemo(() => newApplicationDraftId(idempotencyStore), [idempotencyStore]);
+  const idempotency = useMemo(() => new IdempotencyKeyManager(draftId, idempotencyStore), [draftId, idempotencyStore]);
+  // Offline outbox survives a full browser restart (localStorage).
+  const outbox = useMemo(() => new DraftOutbox(defaultOutboxStore()), []);
+
+  // Background-sync flush: on mount, on regained connectivity, and on the
+  // service worker's "cvff-draft-sync" relay (Background Sync API where the
+  // browser supports it), attempt to deliver the queued submission with the
+  // SAME idempotency key — the server deduplicates, so a queued request that
+  // had secretly succeeded can never create a second application.
+  useEffect(() => {
+    let active = true;
+    async function flushOutbox(): Promise<void> {
+      if (outbox.pending() === null) {
+        return;
+      }
+      const client = await session.getClient();
+      if (client === null || !active) {
+        return;
+      }
+      let createdId: string | null = null;
+      const outcome = await outbox.flush({
+        async post(payload, idempotencyKey) {
+          const created = await createApplication(client, payload as Parameters<typeof createApplication>[1], idempotencyKey);
+          createdId = created.application_id;
+        },
+      });
+      if (!active) {
+        return;
+      }
+      if (outcome === "synced" && createdId !== null) {
+        idempotency.rotate();
+        resetNewApplicationDraftId(idempotencyStore);
+        setSubmitState({ kind: "submitted", applicationId: createdId });
+      } else if (outcome === "rejected") {
+        setSubmitState({
+          kind: "failed",
+          formError: "The queued application was definitively rejected by the CVFF service once connectivity returned. It has been removed from the outbox; correct the draft and resubmit.",
+          fieldErrors: {},
+        });
+      }
+    }
+    void flushOutbox();
+    const onOnline = () => void flushOutbox();
+    const onSwMessage = (event: MessageEvent) => {
+      if (event.data && (event.data as { type?: string }).type === DRAFT_SYNC_TAG) {
+        void flushOutbox();
+      }
+    };
+    window.addEventListener("online", onOnline);
+    navigator.serviceWorker?.addEventListener("message", onSwMessage);
+    return () => {
+      active = false;
+      window.removeEventListener("online", onOnline);
+      navigator.serviceWorker?.removeEventListener("message", onSwMessage);
+    };
+  }, [outbox, session, idempotency, idempotencyStore]);
 
   const errors = validateDraft(draft);
   const stepFields = STEP_FIELDS[step];
@@ -74,12 +137,28 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
   }
 
   async function submit(): Promise<void> {
-    if (submitState.kind === "submitting") {
+    if (submitState.kind === "submitting" || submitState.kind === "queued") {
       return;
     }
     setTouched(true);
     if (Object.keys(errors).length > 0) {
       setStep(0);
+      return;
+    }
+    const payload = draftToPayload(draft);
+    // Offline: queue honestly instead of pretending the request was sent.
+    if (!isOnline()) {
+      const queuedAt = new Date().toISOString();
+      if (outbox.enqueue({ draftId, idempotencyKey: idempotency.key(), payload, queuedAt })) {
+        setSubmitState({ kind: "queued", queuedAt });
+        void requestBackgroundSync();
+      } else {
+        setSubmitState({
+          kind: "failed",
+          formError: "You are offline and this browser could not persist the draft queue. Do not close this page; resubmit when connectivity returns.",
+          fieldErrors: {},
+        });
+      }
       return;
     }
     setSubmitState({ kind: "submitting" });
@@ -90,7 +169,7 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
     }
     try {
       // Same key on every retry of this draft: the server deduplicates on it.
-      const created = await createApplication(client, draftToPayload(draft), idempotency.key());
+      const created = await createApplication(client, payload, idempotency.key());
       idempotency.rotate();
       resetNewApplicationDraftId(idempotencyStore);
       setSubmitState({ kind: "submitted", applicationId: created.application_id });
@@ -111,13 +190,20 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
           }
         }
       } else {
-        // Network/5xx outcome is ambiguous: the same idempotency key makes
-        // a retry safe, so keep the draft and show an honest failure.
-        setSubmitState({
-          kind: "failed",
-          formError: error instanceof Error ? error.message : "Submission failed.",
-          fieldErrors: {},
-        });
+        // Network/5xx outcome is ambiguous: queue the draft with the same
+        // idempotency key and sync it when connectivity returns.
+        const queuedAt = new Date().toISOString();
+        if (outbox.enqueue({ draftId, idempotencyKey: idempotency.key(), payload, queuedAt })) {
+          setSubmitState({ kind: "queued", queuedAt });
+          setSyncNotice(error instanceof Error ? `Submission did not complete (${error.message}).` : "Submission did not complete.");
+          void requestBackgroundSync();
+        } else {
+          setSubmitState({
+            kind: "failed",
+            formError: error instanceof Error ? error.message : "Submission failed.",
+            fieldErrors: {},
+          });
+        }
       }
     }
   }
@@ -150,15 +236,29 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
 
   return (
     <div className="space-y-4">
+      {!online && (
+        <p className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900" role="status">
+          {t("offline.banner")}
+        </p>
+      )}
+      {submitState.kind === "queued" && (
+        <section className="card border-l-4 border-l-amber-600" role="status">
+          <p className="eyebrow">{t("wizard.title")}</p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-800">Queued for automatic submission</h2>
+          <p className="mt-2 max-w-xl text-sm text-slate-700">{t("offline.draftQueued")}</p>
+          <p className="mt-1 text-xs text-slate-500">Queued at {new Date(submitState.queuedAt).toLocaleString()}.</p>
+          {syncNotice !== null && <p className="mt-1 text-xs text-slate-500">{syncNotice}</p>}
+        </section>
+      )}
       <div>
-        <p className="eyebrow">New CVFF application</p>
-        <h2 className="mt-1 text-lg font-semibold text-slate-800">{STEPS[step]}</h2>
+        <p className="eyebrow">{t("wizard.title")}</p>
+        <h2 className="mt-1 text-lg font-semibold text-slate-800">{t(STEP_KEYS[step])}</h2>
         <ol className="mt-3 flex gap-2" aria-label="Wizard progress">
           {STEPS.map((label, index) => (
             <li
               key={label}
               className={`h-1.5 flex-1 rounded-full ${index <= step ? "bg-brand-600" : "bg-slate-200"}`}
-              aria-label={`Step ${index + 1}: ${label}${index === step ? " (current)" : ""}`}
+              aria-label={`Step ${index + 1}: ${t(STEP_KEYS[index])}${index === step ? " (current)" : ""}`}
             />
           ))}
         </ol>
@@ -241,15 +341,19 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
 
       <div className="flex items-center justify-between">
         <button className="button button--quiet" onClick={() => (step === 0 ? navigate({ name: "dashboard" }) : setStep((current) => current - 1))}>
-          {step === 0 ? "Cancel" : "Back"}
+          {step === 0 ? "Cancel" : t("wizard.back")}
         </button>
         {step < STEPS.length - 1 ? (
           <button className="button" onClick={nextStep}>
-            Continue
+            {t("wizard.next")}
           </button>
         ) : (
-          <button className="button" disabled={submitState.kind === "submitting"} onClick={() => void submit()}>
-            {submitState.kind === "submitting" ? "Submitting…" : "Submit application"}
+          <button
+            className="button"
+            disabled={submitState.kind === "submitting" || submitState.kind === "queued"}
+            onClick={() => void submit()}
+          >
+            {submitState.kind === "submitting" ? "Submitting…" : submitState.kind === "queued" ? t("offline.draftSyncing") : t("wizard.submit")}
           </button>
         )}
       </div>
@@ -274,4 +378,24 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
       <span className="font-medium text-slate-800">{value}</span>
     </div>
   );
+}
+
+/**
+ * Asks the service worker for a Background Sync slot so the outbox flush is
+ * triggered even if the tab is closed before connectivity returns. Where the
+ * browser lacks the Background Sync API, the page-side "online" listener is
+ * the (honest) fallback and this resolves to false.
+ */
+async function requestBackgroundSync(): Promise<boolean> {
+  try {
+    const registration = await navigator.serviceWorker?.ready;
+    const syncManager = registration as unknown as { sync?: { register(tag: string): Promise<void> } } | undefined;
+    if (syncManager?.sync === undefined) {
+      return false;
+    }
+    await syncManager.sync.register(DRAFT_SYNC_TAG);
+    return true;
+  } catch {
+    return false;
+  }
 }
