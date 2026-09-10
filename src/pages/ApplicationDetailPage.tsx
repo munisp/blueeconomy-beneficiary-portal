@@ -16,6 +16,8 @@ import {
 import { formatKoboAsNgn } from "../domain/money";
 import { startPolling, type PollerHandle } from "../polling";
 import { ErrorNotice, LoadingState, SlaCountdown, StatusBadge } from "../components/feedback";
+import { formatAge, isStale, openSseHintChannel, type LiveChannelState } from "../pwa/liveStatus";
+import { useTranslator } from "../i18n/react";
 
 type DetailState =
   | { kind: "loading" }
@@ -33,7 +35,13 @@ export function ApplicationDetailPage({
 }) {
   const [state, setState] = useState<DetailState>({ kind: "loading" });
   const [pollNotice, setPollNotice] = useState<string | null>(null);
+  const [lastSuccessMs, setLastSuccessMs] = useState<number | null>(null);
+  const [clockMs, setClockMs] = useState<number>(() => Date.now());
+  const [channelState, setChannelState] = useState<LiveChannelState>("poll-only");
   const pollerRef = useRef<PollerHandle | null>(null);
+  const { t } = useTranslator();
+  const pollIntervalMs = session.configuration.cvff_api.poll_interval_ms;
+  const sseUrl = session.configuration.live_updates?.sse_url;
 
   const refresh = useCallback(async (): Promise<{ terminal: boolean }> => {
     const client = await session.getClient();
@@ -45,6 +53,7 @@ export function ApplicationDetailPage({
       getApplicationEvents(client, applicationId),
     ]);
     setState({ kind: "ready", application, events });
+    setLastSuccessMs(Date.now());
     setPollNotice(null);
     return { terminal: isTerminalState(application.state) };
   }, [session, applicationId]);
@@ -55,19 +64,28 @@ export function ApplicationDetailPage({
     const poller = startPolling(
       async () => (cancelled ? { terminal: true } : refresh()),
       (message) => setPollNotice(`Status refresh failed: ${message}. Polling continues with backoff.`),
-      { baseMs: session.configuration.cvff_api.poll_interval_ms },
+      { baseMs: pollIntervalMs },
     );
     pollerRef.current = poller;
+    // SSE hint channel (innovation #9): when the deployment configures a
+    // realtime endpoint, events trigger an immediate poll. Poll payloads
+    // remain the only data source; without a configured URL the page is
+    // honestly poll-only.
+    const closeSse = openSseHintChannel(sseUrl, () => void refresh(), setChannelState);
+    // 30 s clock tick keeps the stale/last-refreshed label truthful.
+    const clock = setInterval(() => setClockMs(Date.now()), 30_000);
     return () => {
       cancelled = true;
       poller.cancel();
+      closeSse();
+      clearInterval(clock);
     };
-  }, [refresh, session.configuration.cvff_api.poll_interval_ms]);
+  }, [refresh, pollIntervalMs, sseUrl]);
 
   return (
     <div className="space-y-4">
       <button className="button button--quiet" onClick={() => navigate({ name: "dashboard" })}>
-        ← Back to dashboard
+        {t("nav.backToDashboard")}
       </button>
 
       {state.kind === "loading" && <LoadingState message="Loading the application and its approval history…" />}
@@ -115,6 +133,28 @@ export function ApplicationDetailPage({
               {pollNotice}
             </p>
           )}
+
+          <p className="flex flex-wrap items-center gap-2 text-xs text-slate-500" role="status">
+            <span
+              className={`inline-block h-2 w-2 rounded-full ${channelState === "sse-connected" ? "bg-green-600" : "bg-slate-400"}`}
+              aria-hidden="true"
+            />
+            <span>
+              {channelState === "sse-connected"
+                ? t("live.sse")
+                : channelState === "sse-degraded"
+                  ? t("live.sseDegraded")
+                  : t("live.pollOnly")}
+            </span>
+            <span aria-hidden="true">·</span>
+            {isStale(clockMs, lastSuccessMs, pollIntervalMs) ? (
+              <span className="font-medium text-amber-800">
+                {t("live.stale", { age: lastSuccessMs === null ? "—" : formatAge(clockMs, lastSuccessMs) })}
+              </span>
+            ) : (
+              <span>{t("live.refreshed", { age: lastSuccessMs === null ? "—" : formatAge(clockMs, lastSuccessMs) })}</span>
+            )}
+          </p>
 
           <section className="card">
             <p className="eyebrow">Four-party approval chain</p>
