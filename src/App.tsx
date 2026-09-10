@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { User, UserManager } from "oidc-client-ts";
 import { classifyBootstrapError, cleanCallbackUrl, completeAuthenticationCallback, createUserManager, usableAccessToken } from "./auth";
 import { loadRuntimeConfiguration, type PortalRuntimeConfiguration } from "./runtime-config";
@@ -8,6 +8,10 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { NewApplicationPage } from "./pages/NewApplicationPage";
 import { ApplicationDetailPage } from "./pages/ApplicationDetailPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
+import { SUPPORTED_LOCALES, createTranslator, detectLocale, persistLocale, type Locale } from "./i18n";
+import { I18nContext, useTranslator } from "./i18n/react";
+import { useInstallPrompt } from "./pwa/installPrompt";
+import { useOnlineStatus } from "./pwa/online";
 
 const RUNTIME_CONFIGURATION_URL = "/platform-config.json";
 
@@ -27,6 +31,19 @@ type ApplicationState =
 export default function App() {
   const [state, setState] = useState<ApplicationState>({ kind: "loading" });
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash));
+  const [locale, setLocaleState] = useState<Locale>(() =>
+    detectLocale(typeof window === "undefined" ? null : window.localStorage, typeof navigator === "undefined" ? undefined : navigator.language),
+  );
+  const translator = useMemo(() => createTranslator(locale), [locale]);
+  const setLocale = useCallback((next: Locale) => {
+    setLocaleState(next);
+    persistLocale(typeof window === "undefined" ? null : window.localStorage, next);
+  }, []);
+  const i18n = useMemo(() => ({ translator, setLocale }), [translator, setLocale]);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   useEffect(() => {
     let active = true;
@@ -91,29 +108,16 @@ export default function App() {
   const title = state.kind === "ready" ? state.configuration.application_name : "CVFF Beneficiary Portal";
 
   return (
+    <I18nContext.Provider value={i18n}>
     <main className="portal-shell">
-      <header className="mb-8 flex flex-wrap items-start justify-between gap-4 border-b border-slate-300 pb-6">
-        <div>
-          <p className="eyebrow">Nigerian Maritime Administration and Safety Agency</p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-900">{title}</h1>
-          <p className="mt-1 max-w-xl text-sm text-slate-600">
-            Cabotage Vessel Financing Fund applications for eligible vessel operators.
-          </p>
-        </div>
-        <div className="flex items-center gap-3" aria-live="polite">
-          {state.kind === "ready" &&
-            (authenticated && state.user !== null ? (
-              <AccountMenu user={state.user} onSignOut={() => void startSignOut()} />
-            ) : (
-              <>
-                <span className="badge badge--neutral">Sign-in required</span>
-                <button className="button" onClick={() => void startSignIn()}>
-                  Sign in
-                </button>
-              </>
-            ))}
-        </div>
-      </header>
+      <PortalHeader
+        title={title}
+        authenticated={authenticated}
+        ready={state.kind === "ready"}
+        user={state.kind === "ready" ? state.user : null}
+        onSignIn={() => void startSignIn()}
+        onSignOut={() => void startSignOut()}
+      />
 
       {state.kind === "loading" && (
         <section className="card" aria-live="polite">
@@ -177,6 +181,88 @@ export default function App() {
         />
       )}
     </main>
+    </I18nContext.Provider>
+  );
+}
+
+/**
+ * Header with the translated agency masthead, language switcher (EN/FR),
+ * honest offline banner, and the PWA install affordance (rendered only when
+ * the browser actually offered `beforeinstallprompt`).
+ */
+function PortalHeader({
+  title,
+  ready,
+  authenticated,
+  user,
+  onSignIn,
+  onSignOut,
+}: {
+  title: string;
+  ready: boolean;
+  authenticated: boolean;
+  user: User | null;
+  onSignIn: () => void;
+  onSignOut: () => void;
+}) {
+  const { t } = useTranslator();
+  const online = useOnlineStatus();
+  const install = useInstallPrompt();
+  return (
+    <>
+      {!online && (
+        <p className="mb-4 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900" role="status">
+          {t("offline.banner")}
+        </p>
+      )}
+      <header className="mb-8 flex flex-wrap items-start justify-between gap-4 border-b border-slate-300 pb-6">
+        <div>
+          <p className="eyebrow">{t("app.eyebrow")}</p>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-900">{title}</h1>
+          <p className="mt-1 max-w-xl text-sm text-slate-600">{t("app.tagline")}</p>
+        </div>
+        <div className="flex items-center gap-3" aria-live="polite">
+          <LanguageSwitcher />
+          {install.kind === "available" && (
+            <button className="button button--outline" onClick={() => void install.prompt()} title={t("install.hint")}>
+              {t("install.prompt")}
+            </button>
+          )}
+          {ready &&
+            (authenticated && user !== null ? (
+              <AccountMenu user={user} onSignOut={onSignOut} />
+            ) : (
+              <>
+                <span className="badge badge--neutral">{t("auth.signInRequired")}</span>
+                <button className="button" onClick={onSignIn}>
+                  {t("auth.signIn")}
+                </button>
+              </>
+            ))}
+        </div>
+      </header>
+    </>
+  );
+}
+
+function LanguageSwitcher() {
+  const { translator, setLocale } = useContext(I18nContext);
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-slate-600">
+      <span className="sr-only">Language / Langue</span>
+      <select
+        className="field-select !w-auto px-2 py-1 text-xs"
+        aria-label="Language / Langue"
+        value={translator.locale}
+        onChange={(event) => setLocale(event.target.value as Locale)}
+      >
+        {SUPPORTED_LOCALES.map((locale) => (
+          <option key={locale} value={locale}>
+            {locale === "en" ? "English" : "Français"}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -214,17 +300,18 @@ function profileEmail(user: User): string | null {
 
 function AccountMenu({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const email = profileEmail(user);
+  const { t } = useTranslator();
   return (
     <details className="relative">
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-800 hover:bg-slate-50">
-        <span className="badge badge--success">Authenticated</span>
+        <span className="badge badge--success">{t("auth.authenticated")}</span>
         <span className="max-w-48 truncate font-medium">{profileDisplayName(user)}</span>
       </summary>
       <div className="absolute right-0 z-10 mt-2 w-64 rounded border border-slate-200 bg-white p-3 shadow-lg">
         <p className="text-sm font-semibold text-slate-900">{profileDisplayName(user)}</p>
         {email !== null && <p className="mt-0.5 break-all text-xs text-slate-600">{email}</p>}
         <button className="button button--quiet mt-3 w-full" onClick={onSignOut}>
-          Sign out
+          {t("auth.signOut")}
         </button>
       </div>
     </details>
