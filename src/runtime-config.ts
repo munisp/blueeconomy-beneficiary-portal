@@ -65,7 +65,7 @@ export function validateRuntimeConfiguration(candidate: unknown): PortalRuntimeC
   const oidc: OidcRuntimeConfiguration = {
     authority: validateHttpsUrl(requiredText(oidcCandidate, "authority"), "oidc.authority"),
     client_id: requiredText(oidcCandidate, "client_id"),
-    redirect_uri: validateHttpsUrl(oidcCandidate, "oidc.redirect_uri"),
+    redirect_uri: validateHttpsUrl(requiredText(oidcCandidate, "redirect_uri"), "oidc.redirect_uri"),
     scope: requiredText(oidcCandidate, "scope"),
   };
   const postLogout = optionalText(oidcCandidate, "post_logout_redirect_uri");
