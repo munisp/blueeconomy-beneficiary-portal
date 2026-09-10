@@ -48,6 +48,15 @@ The JSON above is a **schema illustration only**; it must be replaced at deploym
 | `cvff_api.poll_interval_ms` | no (default 15000) | Base poll interval for status tracking; backoff doubles it to a 120 s ceiling. Range 1000–300000. |
 | `cvff_api.max_document_bytes` | no (default 10485760) | Client-side upload size ceiling. Range 1–67108864. |
 | `cvff_api.document_content_types` | no (default PDF/PNG/JPEG) | Client-side upload MIME allow-list. The backend remains authoritative. |
+| `live_updates` | no | Realtime status channel. Absent = poll-only (the platform currently exposes no SSE endpoint for application status). |
+| `live_updates.sse_url` | no | HTTPS SSE endpoint used only as a *refresh hint*: any event triggers an immediate poll. Poll responses remain the sole data source; an errored channel degrades honestly to poll-only. |
+
+## Phase 17 additions
+
+- **PWA (#14):** install prompt (rendered only when the browser fires `beforeinstallprompt` — never a fake affordance), honest offline banner, and an offline **draft outbox** for the wizard: submissions attempted offline (or lost to network/5xx ambiguity) are persisted locally with their Phase-15 idempotency key and flushed on `online` / Background Sync (`cvff-draft-sync`, relayed by `sw.js` to open clients — the worker holds no access token). Repeats reuse the same key, so the server deduplicates; a queued application is displayed as "queued, not yet sent" until the server confirms.
+- **i18n (#15):** EN/FR skeleton — flat JSON bundles (`src/i18n/en.json`, `fr.json`), fallback chain locale → English → key, locale from stored choice → `navigator.language` → `en`. Header, navigation and wizard chrome are translated; domain validation messages remain English until content review.
+- **CSP/SRI (#17):** `tests/csp.test.ts` pins the Phase-15 `worker-src 'self'` fix in both the meta policy and nginx header, asserts `script-src 'self'` only, and fails closed if any external CDN script/link is ever added (today there are none, so no SRI hashes are required).
+- **Live status (#9 consumer):** the application detail view shows the channel state (poll-only / realtime / degraded) plus a stale indicator when the last successful refresh is older than two poll cycles.
 
 ## API integration points
 
