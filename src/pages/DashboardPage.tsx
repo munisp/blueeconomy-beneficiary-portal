@@ -5,6 +5,7 @@ import { listApplications, type ApplicationSummary } from "../api/applications";
 import { isTerminalState, slaReading } from "../domain/cvff";
 import { formatKoboAsNgn } from "../domain/money";
 import { EmptyState, ErrorNotice, LoadingState, SlaCountdown, StatusBadge } from "../components/feedback";
+import { useTranslator } from "../i18n/react";
 
 type LoadState =
   | { kind: "loading" }
@@ -14,6 +15,7 @@ type LoadState =
 export function DashboardPage({ session, navigate }: { session: SessionContext; navigate: (route: Route) => void }) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [now, setNow] = useState<Date>(() => new Date());
+  const { t } = useTranslator();
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -43,11 +45,11 @@ export function DashboardPage({ session, navigate }: { session: SessionContext; 
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="eyebrow">Dashboard</p>
-          <h2 className="mt-1 text-lg font-semibold text-slate-800">My CVFF applications</h2>
+          <p className="eyebrow">{t("nav.dashboard")}</p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-800">{t("dashboard.title")}</h2>
         </div>
         <button className="button" onClick={() => navigate({ name: "new-application" })}>
-          New application
+          {t("nav.newApplication")}
         </button>
       </div>
 

@@ -18,6 +18,8 @@
     "allowImportingTsExtensions": false,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
+    "resolveJsonModule": true,
+    "types": ["node"],
     "noEmit": true,
     "jsx": "react-jsx"
   },

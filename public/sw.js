@@ -9,6 +9,33 @@
 const CACHE_NAME = "cvff-shell-v1";
 const PRECACHE_URLS = ["/", "/index.html", "/offline.html", "/manifest.json", "/icon-192.png", "/icon-512.png"];
 
+/*
+ * Background sync tag for the wizard draft outbox (Phase 17, #14). The
+ * worker itself never calls the CVFF API — it holds no access token by
+ * design. Instead, a sync event (or an explicit page message) is relayed to
+ * open clients, which flush the outbox with their own authenticated client.
+ */
+const DRAFT_SYNC_TAG = "cvff-draft-sync";
+
+async function notifyClientsToSyncDrafts() {
+  const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  for (const client of clients) {
+    client.postMessage({ type: DRAFT_SYNC_TAG });
+  }
+}
+
+self.addEventListener("sync", (event) => {
+  if (event.tag === DRAFT_SYNC_TAG) {
+    event.waitUntil(notifyClientsToSyncDrafts());
+  }
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === DRAFT_SYNC_TAG) {
+    event.waitUntil(notifyClientsToSyncDrafts());
+  }
+});
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches

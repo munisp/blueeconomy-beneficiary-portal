@@ -25,6 +25,19 @@ export interface PortalRuntimeConfiguration {
   application_name: string;
   oidc: OidcRuntimeConfiguration;
   cvff_api: CvffApiRuntimeConfiguration;
+  live_updates?: LiveUpdatesRuntimeConfiguration;
+}
+
+/**
+ * Optional realtime status channel (Phase 17, innovation #9 consumer side).
+ * Absent means poll-only — the honest default, since the platform currently
+ * exposes no SSE endpoint for application status. When `sse_url` is present
+ * it must be HTTPS; SSE is then used as a refresh HINT on top of polling,
+ * never as the sole source of truth (events trigger a re-fetch; payloads are
+ * never trusted directly).
+ */
+export interface LiveUpdatesRuntimeConfiguration {
+  sse_url?: string;
 }
 
 export const DEFAULT_POLL_INTERVAL_MS = 15_000;
@@ -85,7 +98,22 @@ export function validateRuntimeConfiguration(candidate: unknown): PortalRuntimeC
       max_document_bytes: maxDocumentBytes,
       document_content_types: documentContentTypes,
     },
+    live_updates: validateLiveUpdates(candidate.live_updates),
   };
+}
+
+function validateLiveUpdates(candidate: unknown): LiveUpdatesRuntimeConfiguration | undefined {
+  if (candidate === undefined) {
+    return undefined; // poll-only: no realtime channel configured
+  }
+  if (!isRecord(candidate)) {
+    throw new Error("live_updates must be an object");
+  }
+  const sseUrl = optionalText(candidate, "sse_url");
+  if (sseUrl === undefined) {
+    return {};
+  }
+  return { sse_url: validateHttpsUrl(sseUrl, "live_updates.sse_url") };
 }
 
 function validateContentTypes(candidate: unknown): string[] {
