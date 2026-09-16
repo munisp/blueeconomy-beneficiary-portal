@@ -81,7 +81,11 @@ export default function App() {
     }
     const usable = await usableAccessToken(state.manager, state.user);
     if (usable === null) {
-      setState({ ...state, user: null });
+      // Phase 19 M1: the session silently lapsed (silent renew failed). Do
+      // NOT pretend this is a fresh visit — surface an honest
+      // "session expired" state. Any unsubmitted wizard draft survives in
+      // the offline outbox (localStorage) and is flushed after re-sign-in.
+      setState({ ...state, user: null, sessionExpired: true });
       return null;
     }
     if (usable.user !== state.user) {
@@ -145,8 +149,10 @@ export default function App() {
               <p className="eyebrow">Sign-in session expired</p>
               <h2 className="mt-1 text-lg font-semibold text-slate-800">Sign in again to continue</h2>
               <p className="mt-1 max-w-xl text-sm text-slate-600">
-                This sign-in link has already been used or has expired — for example after reloading the sign-in
-                callback page. No session was compromised; start a fresh sign-in to continue.
+                Your sign-in session has expired — either this sign-in link was already used, or the short-lived
+                session token could not be renewed while you worked. No session was compromised. Any unsubmitted
+                application draft is preserved in this browser&apos;s offline outbox and will be submitted
+                automatically after you sign in again.
               </p>
               <button className="button mt-4" onClick={() => void startSignIn()}>
                 Sign in
