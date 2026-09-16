@@ -76,10 +76,18 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
         return;
       }
       let createdId: string | null = null;
+      let rejectionStatus: number | null = null;
       const outcome = await outbox.flush({
         async post(payload, idempotencyKey) {
-          const created = await createApplication(client, payload as Parameters<typeof createApplication>[1], idempotencyKey);
-          createdId = created.application_id;
+          try {
+            const created = await createApplication(client, payload as Parameters<typeof createApplication>[1], idempotencyKey);
+            createdId = created.application_id;
+          } catch (error) {
+            if (error instanceof ApiError) {
+              rejectionStatus = error.status;
+            }
+            throw error;
+          }
         },
       });
       if (!active) {
@@ -90,9 +98,16 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
         resetNewApplicationDraftId(idempotencyStore);
         setSubmitState({ kind: "submitted", applicationId: createdId });
       } else if (outcome === "rejected") {
+        // Definitive 4xx — the server saw and refused the queued submission.
+        // Surface "rejected, needs action" honestly instead of re-POSTing
+        // forever. An auth rejection (401/403) is a session/permission
+        // problem, not a validation problem: say so.
         setSubmitState({
           kind: "failed",
-          formError: "The queued application was definitively rejected by the CVFF service once connectivity returned. It has been removed from the outbox; correct the draft and resubmit.",
+          formError:
+            rejectionStatus === 401 || rejectionStatus === 403
+              ? "The queued application was refused because your sign-in session had expired or lacks permission (HTTP " + rejectionStatus + "). It has been removed from the outbox. Sign in again and resubmit the draft."
+              : "The queued application was definitively rejected by the CVFF service once connectivity returned. It has been removed from the outbox; correct the draft and resubmit.",
           fieldErrors: {},
         });
       }
@@ -164,7 +179,22 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
     setSubmitState({ kind: "submitting" });
     const client = await session.getClient();
     if (client === null) {
-      setSubmitState({ kind: "idle" });
+      // Phase 19 M1: the session expired mid-wizard (silent renew failed).
+      // Never silently reset to "idle" — preserve the draft in the outbox
+      // and tell the user exactly what happened. After re-sign-in the
+      // outbox flush delivers it with the same idempotency key.
+      const queuedAt = new Date().toISOString();
+      if (outbox.enqueue({ draftId, idempotencyKey: idempotency.key(), payload, queuedAt })) {
+        setSubmitState({ kind: "queued", queuedAt });
+        setSyncNotice("Your sign-in session expired before the application could be submitted. The complete draft is preserved in this browser's offline outbox and will be submitted automatically after you sign in again.");
+        void requestBackgroundSync();
+      } else {
+        setSubmitState({
+          kind: "failed",
+          formError: "Your sign-in session expired and this browser could not persist the draft queue. Do not close this page; sign in again and resubmit.",
+          fieldErrors: {},
+        });
+      }
       return;
     }
     try {
@@ -174,6 +204,23 @@ export function NewApplicationPage({ session, navigate }: { session: SessionCont
       resetNewApplicationDraftId(idempotencyStore);
       setSubmitState({ kind: "submitted", applicationId: created.application_id });
     } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        // Token died mid-request: NOT a validation rejection. Preserve the
+        // draft in the outbox; after re-sign-in it flushes with the same key.
+        const queuedAt = new Date().toISOString();
+        if (outbox.enqueue({ draftId, idempotencyKey: idempotency.key(), payload, queuedAt })) {
+          setSubmitState({ kind: "queued", queuedAt });
+          setSyncNotice("Your sign-in session expired during submission (HTTP 401). The draft is preserved in the offline outbox and will be submitted automatically after you sign in again.");
+          void requestBackgroundSync();
+        } else {
+          setSubmitState({
+            kind: "failed",
+            formError: "Your sign-in session expired during submission and this browser could not persist the draft queue. Do not close this page; sign in again and resubmit.",
+            fieldErrors: {},
+          });
+        }
+        return;
+      }
       if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
         const mapped = mapServerErrors(error.problem);
         setSubmitState({
