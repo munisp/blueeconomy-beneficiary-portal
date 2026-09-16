@@ -64,6 +64,14 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) {
     return;
   }
+  // Deployment configuration is NEVER cached (Phase 19 H3): the page fetches
+  // /platform-config.json with cache: "no-store" and nginx serves it with
+  // expires -1, but a cache-first SW would ignore both and pin installed
+  // PWAs to a stale first copy forever after every redeploy. Network-only,
+  // matching the ministry portal's service worker.
+  if (url.pathname === "/platform-config.json") {
+    return;
+  }
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)

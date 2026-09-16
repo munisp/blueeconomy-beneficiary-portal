@@ -36,6 +36,32 @@ const OUTBOX_KEY = "cvff.outbox.new-application";
 /** Error marker: a definitive client rejection (4xx) — stop retrying. */
 export class PermanentSubmissionError extends Error {}
 
+/**
+ * Definitive-rejection classifier (Phase 19 H1). The outbox previously
+ * stopped retrying only on PermanentSubmissionError, but the real transport
+ * (CvffApiClient.createApplication) rejects with ApiError — so every 4xx
+ * (422 validation, 401 expired session, 403 forbidden) was misclassified as
+ * transient and the poisoned entry was re-POSTed forever. A definitive 4xx
+ * means the server saw and refused the submission: clear the entry and
+ * surface "rejected". Retry is kept ONLY for genuinely ambiguous outcomes:
+ * network failure/timeout (status 0), 5xx, 408 (request timeout) and 429
+ * (rate limited) — none of which prove the server rejected the payload.
+ */
+const RETRYABLE_CLIENT_STATUSES = new Set([408, 429]);
+
+export function isDefinitiveRejection(error: unknown): boolean {
+  if (error instanceof PermanentSubmissionError) {
+    return true;
+  }
+  // Duck-typed ApiError (src/api/client.ts): { status: number }. Duck-typing
+  // keeps this module free of the api/ layer and works across realms/bundles.
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === "number" && status >= 400 && status < 500) {
+    return !RETRYABLE_CLIENT_STATUSES.has(status);
+  }
+  return false;
+}
+
 export class DraftOutbox {
   constructor(
     private readonly store: KeyValueStore | null,
@@ -101,7 +127,11 @@ export class DraftOutbox {
       this.clear();
       return "synced";
     } catch (error) {
-      if (error instanceof PermanentSubmissionError) {
+      // Definitive 4xx (incl. ApiError 401/403/422 from the transport): the
+      // server saw and refused the submission — clear it and report
+      // "rejected" so the UI can demand user action instead of re-POSTing
+      // forever. Network/5xx stays "pending" for the next sync.
+      if (isDefinitiveRejection(error)) {
         this.clear();
         return "rejected";
       }
