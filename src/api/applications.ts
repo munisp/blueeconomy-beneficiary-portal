@@ -47,21 +47,6 @@ export interface UploadedDocument {
   uploaded_at: string;
 }
 
-export function isApplicationSummary(candidate: unknown): candidate is ApplicationSummary {
-  if (typeof candidate !== "object" || candidate === null) {
-    return false;
-  }
-  const record = candidate as Record<string, unknown>;
-  return (
-    typeof record.application_id === "string" &&
-    typeof record.vessel_name === "string" &&
-    typeof record.amount === "number" &&
-    record.currency === "NGN" &&
-    isCvffState(record.state) &&
-    typeof record.state_entered_at === "string" &&
-    typeof record.created_at === "string"
-  );
-}
 
 export function listApplications(client: CvffApiClient): Promise<ApplicationSummary[]> {
   return client.get<ApplicationSummary[]>("/applications");

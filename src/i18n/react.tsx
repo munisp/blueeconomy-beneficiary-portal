@@ -19,7 +19,3 @@ export function useTranslator(): Translator {
   return useContext(I18nContext).translator;
 }
 
-export function useLocale(): { locale: Locale; setLocale: (locale: Locale) => void } {
-  const { translator, setLocale } = useContext(I18nContext);
-  return { locale: translator.locale, setLocale };
-}
