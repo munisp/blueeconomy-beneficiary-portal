@@ -1,13 +1,15 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { User, UserManager } from "oidc-client-ts";
 import { classifyBootstrapError, cleanCallbackUrl, completeAuthenticationCallback, createUserManager, usableAccessToken } from "./auth";
 import { loadRuntimeConfiguration, type PortalRuntimeConfiguration } from "./runtime-config";
 import { CvffApiClient } from "./api/client";
 import { parseRoute, routeHref, type Route } from "./router";
-import { DashboardPage } from "./pages/DashboardPage";
-import { NewApplicationPage } from "./pages/NewApplicationPage";
-import { ApplicationDetailPage } from "./pages/ApplicationDetailPage";
-import { DocumentsPage } from "./pages/DocumentsPage";
+// Phase 21 perf: authenticated routes are code-split; the public shell
+// (sign-in, configuration gates) stays in the entry chunk.
+const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
+const NewApplicationPage = lazy(async () => ({ default: (await import("./pages/NewApplicationPage")).NewApplicationPage }));
+const ApplicationDetailPage = lazy(async () => ({ default: (await import("./pages/ApplicationDetailPage")).ApplicationDetailPage }));
+const DocumentsPage = lazy(async () => ({ default: (await import("./pages/DocumentsPage")).DocumentsPage }));
 import { SUPPORTED_LOCALES, createTranslator, detectLocale, persistLocale, type Locale } from "./i18n";
 import { I18nContext, useTranslator } from "./i18n/react";
 import { useInstallPrompt } from "./pwa/installPrompt";
@@ -325,6 +327,26 @@ function AccountMenu({ user, onSignOut }: { user: User; onSignOut: () => void })
 }
 
 function SessionView({ session, route, navigate }: { session: SessionContext; route: Route; navigate: (route: Route) => void }) {
+  return (
+    <Suspense
+      fallback={
+        <section className="card" aria-busy="true" aria-label="Loading page">
+          <p className="eyebrow">Loading</p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-800">Loading the requested page</h2>
+          <div className="mt-3 space-y-2">
+            <div className="h-3 w-2/3 animate-pulse rounded bg-slate-200" />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-slate-200" />
+            <div className="h-24 animate-pulse rounded bg-slate-100" />
+          </div>
+        </section>
+      }
+    >
+      <SessionRoute session={session} route={route} navigate={navigate} />
+    </Suspense>
+  );
+}
+
+function SessionRoute({ session, route, navigate }: { session: SessionContext; route: Route; navigate: (route: Route) => void }) {
   switch (route.name) {
     case "dashboard":
       return <DashboardPage session={session} navigate={navigate} />;
