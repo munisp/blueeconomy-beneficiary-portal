@@ -1,5 +1,5 @@
 import type { CvffApiClient } from "./client";
-import { isCvffState, type CvffState } from "../domain/cvff";
+import type { CvffState } from "../domain/cvff";
 import type { CreateApplicationPayload } from "../domain/wizard";
 import type { DocumentType } from "../domain/documents";
 
