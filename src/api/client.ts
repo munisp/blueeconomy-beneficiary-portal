@@ -51,6 +51,10 @@ export class CvffApiClient {
     return this.request<T>("POST", path, JSON.stringify(body), headers);
   }
 
+  async put<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>("PUT", path, JSON.stringify(body), { "Content-Type": "application/json" });
+  }
+
   async postForm<T>(path: string, form: FormData, idempotencyKey?: string): Promise<T> {
     const headers: Record<string, string> = {};
     if (idempotencyKey !== undefined) {
