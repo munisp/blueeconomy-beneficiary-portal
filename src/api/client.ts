@@ -59,6 +59,41 @@ export class CvffApiClient {
     return this.request<T>("POST", path, form, headers);
   }
 
+  /** Binary download (e.g. document content). Same bearer auth, timeout and
+   *  fail-closed error mapping as JSON requests; resolves with the raw Blob. */
+  async getBlob(path: string): Promise<Blob> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await this.fetchFn(`${this.baseUrl}${path}`, {
+        method: "GET",
+        headers: {
+          Accept: "application/octet-stream",
+          Authorization: `Bearer ${this.token}`,
+        },
+        cache: "no-store",
+        credentials: "omit",
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        const parsed: unknown = text.length > 0 ? tryParseJson(text) : null;
+        throw new ApiError(response.status, parsed, `Request failed with HTTP ${response.status}`);
+      }
+      return await response.blob();
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
+      }
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiError(0, null, "The request timed out. Check connectivity and retry.");
+      }
+      throw new ApiError(0, null, "The API could not be reached. No local fallback is used.");
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   /** Multipart upload with real progress events (see postFormWithProgress). */
   postFormWithProgress<T>(path: string, form: FormData, idempotencyKey: string, onProgress: (fraction: number) => void): Promise<T> {
     return postFormWithProgress<T>({

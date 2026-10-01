@@ -64,6 +64,13 @@ export function listDocuments(client: CvffApiClient, applicationId: string): Pro
   return client.get<UploadedDocument[]>(`/applications/${encodeURIComponent(applicationId)}/documents`);
 }
 
+/** Binary content of one uploaded document (GET .../documents/{id}/content). */
+export function downloadDocument(client: CvffApiClient, applicationId: string, documentId: string): Promise<Blob> {
+  return client.getBlob(
+    `/applications/${encodeURIComponent(applicationId)}/documents/${encodeURIComponent(documentId)}/content`,
+  );
+}
+
 export function createApplication(
   client: CvffApiClient,
   payload: CreateApplicationPayload,
