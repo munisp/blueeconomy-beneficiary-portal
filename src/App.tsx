@@ -10,6 +10,10 @@ const DashboardPage = lazy(async () => ({ default: (await import("./pages/Dashbo
 const NewApplicationPage = lazy(async () => ({ default: (await import("./pages/NewApplicationPage")).NewApplicationPage }));
 const ApplicationDetailPage = lazy(async () => ({ default: (await import("./pages/ApplicationDetailPage")).ApplicationDetailPage }));
 const DocumentsPage = lazy(async () => ({ default: (await import("./pages/DocumentsPage")).DocumentsPage }));
+const DecisionPage = lazy(async () => ({ default: (await import("./pages/DecisionPage")).DecisionPage }));
+const ApplicationRolesPage = lazy(async () => ({ default: (await import("./pages/ApplicationRolesPage")).ApplicationRolesPage }));
+const ReconciliationPage = lazy(async () => ({ default: (await import("./pages/ReconciliationPage")).ReconciliationPage }));
+const DualLedgerReportPage = lazy(async () => ({ default: (await import("./pages/DualLedgerReportPage")).DualLedgerReportPage }));
 import { SUPPORTED_LOCALES, createTranslator, detectLocale, persistLocale, type Locale } from "./i18n";
 import { I18nContext, useTranslator } from "./i18n/react";
 import { useInstallPrompt } from "./pwa/installPrompt";
@@ -356,6 +360,14 @@ function SessionRoute({ session, route, navigate }: { session: SessionContext; r
       return <ApplicationDetailPage session={session} applicationId={route.applicationId} navigate={navigate} />;
     case "application-documents":
       return <DocumentsPage session={session} applicationId={route.applicationId} navigate={navigate} />;
+    case "application-decision":
+      return <DecisionPage session={session} applicationId={route.applicationId} navigate={navigate} />;
+    case "admin-application-roles":
+      return <ApplicationRolesPage session={session} applicationId={route.applicationId} navigate={navigate} />;
+    case "admin-application-reconciliation":
+      return <ReconciliationPage session={session} applicationId={route.applicationId} navigate={navigate} />;
+    case "audit-dual-ledger":
+      return <DualLedgerReportPage session={session} navigate={navigate} />;
     case "not-found":
       return <NotFoundPage path={route.path} navigate={navigate} />;
   }
@@ -382,6 +394,10 @@ function NotFoundPage({ path, navigate }: { path: string; navigate: (route: Rout
         </li>
         <li>#/applications/&lt;id&gt; — application detail</li>
         <li>#/applications/&lt;id&gt;/documents — supporting documents</li>
+        <li>#/applications/&lt;id&gt;/decision — four-party decision</li>
+        <li>#/admin/applications/&lt;id&gt;/roles — officer role assignment</li>
+        <li>#/admin/applications/&lt;id&gt;/reconciliation — reconciliation resolution</li>
+        <li>#/audit/dual-ledger — auditor dual-ledger report</li>
       </ul>
       <button className="button mt-4" onClick={() => navigate({ name: "dashboard" })}>
         Back to dashboard
