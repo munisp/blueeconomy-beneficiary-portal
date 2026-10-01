@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionContext } from "../App";
 import type { Route } from "../router";
-import { listDocuments, type UploadedDocument } from "../api/applications";
+import { downloadDocument, listDocuments, type UploadedDocument } from "../api/applications";
 import { ApiError } from "../api/client";
 import { DOCUMENT_TYPE_LABELS, DOCUMENT_TYPES, formatByteSize, validateDocumentFile, type DocumentType } from "../domain/documents";
 import { IdempotencyKeyManager, defaultIdempotencyStore } from "../idempotency";
@@ -17,6 +17,11 @@ type UploadState =
   | { kind: "uploading"; fraction: number }
   | { kind: "failed"; message: string };
 
+type DownloadState =
+  | { kind: "idle" }
+  | { kind: "downloading"; documentId: string }
+  | { kind: "failed"; documentId: string; message: string };
+
 export function DocumentsPage({
   session,
   applicationId,
@@ -31,6 +36,7 @@ export function DocumentsPage({
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>({ kind: "idle" });
+  const [downloadState, setDownloadState] = useState<DownloadState>({ kind: "idle" });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // One idempotency key per (documentType, file name, file size) selection so
@@ -120,6 +126,40 @@ export function DocumentsPage({
     }
   }
 
+  async function download(document: UploadedDocument): Promise<void> {
+    if (downloadState.kind === "downloading") {
+      return;
+    }
+    setDownloadState({ kind: "downloading", documentId: document.document_id });
+    const usable = await session.getClient();
+    if (usable === null) {
+      setDownloadState({ kind: "idle" });
+      return;
+    }
+    try {
+      const blob = await downloadDocument(usable, applicationId, document.document_id);
+      const url = URL.createObjectURL(blob);
+      const anchor = window.document.createElement("a");
+      anchor.href = url;
+      anchor.download = document.file_name;
+      anchor.rel = "noopener";
+      window.document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setDownloadState({ kind: "idle" });
+    } catch (error) {
+      setDownloadState({
+        kind: "failed",
+        documentId: document.document_id,
+        message:
+          error instanceof ApiError
+            ? error.message
+            : "The download failed. No file was saved; retry the download.",
+      });
+    }
+  }
+
   return (
     <div className="space-y-4">
       <button className="button button--quiet" onClick={() => navigate({ name: "application-detail", applicationId })}>
@@ -202,8 +242,22 @@ export function DocumentsPage({
                   <p className="text-xs text-slate-500">
                     {document.file_name} · {formatByteSize(document.size_bytes)} · {document.content_type}
                   </p>
+                  {downloadState.kind === "failed" && downloadState.documentId === document.document_id && (
+                    <p className="mt-1 text-xs text-red-800" role="alert">{downloadState.message}</p>
+                  )}
                 </div>
-                <span className="text-xs text-slate-500">Confirmed {new Date(document.uploaded_at).toLocaleString("en-NG")}</span>
+                <div className="flex items-center gap-3">
+                  <button
+                    className="button button--quiet"
+                    disabled={downloadState.kind === "downloading"}
+                    onClick={() => void download(document)}
+                  >
+                    {downloadState.kind === "downloading" && downloadState.documentId === document.document_id
+                      ? "Downloading…"
+                      : "Download"}
+                  </button>
+                  <span className="text-xs text-slate-500">Confirmed {new Date(document.uploaded_at).toLocaleString("en-NG")}</span>
+                </div>
               </li>
             ))}
           </ul>
